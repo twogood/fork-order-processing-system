@@ -1,181 +1,42 @@
-using Dapper;
 using OrderProcessing.Domain.Entities;
-using OrderProcessing.Domain.Interfaces;
 using OrderProcessing.Domain.Interfaces.Repositories;
 using OrderProcessing.Domain.ValueObjects;
+using OrderProcessing.Infrastructure.Data;
 
-namespace OrderProcessing.Infrastructure.Repositories
+namespace OrderProcessing.Infrastructure.Repositories;
+
+public class CustomerOrderRepository(ICustomerOrderDatabase database) : ICustomerOrderRepository
 {
-    public class CustomerOrderRepository : ICustomerOrderRepository
+    public async Task<IReadOnlyList<CustomerOrder>> GetByUsernameAsync(string username) =>
+        (await database.GetByUsernameAsync(username)).ToList();
+
+    public Task<CustomerOrder?> GetByOrderNumberAsync(int orderNumber, string username) =>
+        database.GetByOrderNumberAsync(orderNumber, username);
+
+    public async Task<int> AddAsync(CustomerOrder order, List<CustomerOrderItem> items)
     {
-        private readonly IDbConnectionFactory _connectionFactory;
-
-        public CustomerOrderRepository(IDbConnectionFactory connectionFactory)
+        using var transaction = database.BeginTransaction();
+        try
         {
-            _connectionFactory = connectionFactory;
+            var orderId = await database.InsertOrderAsync(order.Status.ToString(), order.TotalPrice, order.Username,
+                order.OrderDate.ToDateTime(TimeOnly.MinValue), order.ShippingAddress, transaction);
+            foreach (var item in items)
+                await database.InsertItemAsync(item.ISBN, orderId, item.Quantity, item.UnitPrice, item.Title, transaction);
+            transaction.Commit();
+            return orderId;
         }
-
-        public async Task<IReadOnlyList<CustomerOrder>> GetByUsernameAsync(string username)
+        catch
         {
-            const string sql = """
-                SELECT
-                    OrderID AS OrderNumber,
-                    OrderDate,
-                    "Status",
-                    TotalPrice,
-                    Custname AS Username,
-                    ShippingAddress
-                FROM customerorder
-                WHERE CustName = @Username
-                ORDER BY OrderDate DESC, OrderID DESC
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            var orders = await connection.QueryAsync<CustomerOrder>(sql, new { Username = username });
-            return orders.ToList();
+            transaction.Rollback();
+            throw;
         }
-
-        public async Task<CustomerOrder?> GetByOrderNumberAsync(int orderNumber, string username)
-        {
-            const string sql = """
-                SELECT
-                    OrderID AS OrderNumber,
-                    TotalPrice,
-                    "Status",
-                    OrderDate,
-                    CustName AS Username,
-                    ShippingAddress
-                FROM customerorder
-                WHERE OrderID = @OrderID
-                  AND CustName = @Username
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            var order = await connection.QuerySingleOrDefaultAsync<CustomerOrder>(
-                sql,
-                new { OrderID = orderNumber, Username = username }
-            );
-
-            return order;
-        }
-
-        public async Task<int> AddAsync(CustomerOrder order, List<CustomerOrderItem> items)
-        {
-            const string orderSql = """
-                INSERT INTO CustomerOrder (
-                    "Status",
-                    TotalPrice,
-                    CustName,
-                    OrderDate,
-                    ShippingAddress
-                )
-                VALUES (
-                    @Status::order_status_enum,
-                    @TotalPrice,
-                    @CustName,
-                    @OrderDate,
-                    @ShippingAddress
-                )
-                RETURNING OrderID
-            """;
-
-            const string itemSql = """
-                INSERT INTO customerorderitem (ISBN, OrderNum, Quantity, UnitPrice, Title)
-                VALUES (@ISBN, @OrderNum, @Quantity, @UnitPrice, @Title)
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-            using var transaction = connection.BeginTransaction();
-
-            try
-            {
-                var orderId = await connection.ExecuteScalarAsync<int>(orderSql, new
-                {
-                    Status = order.Status.ToString(),
-                    order.TotalPrice,
-                    CustName = order.Username,
-                    OrderDate = order.OrderDate.ToDateTime(TimeOnly.MinValue),
-                    order.ShippingAddress
-                }, transaction);
-
-                if (items != null && items.Count > 0)
-                {
-                    foreach (var item in items)
-                    {
-                        await connection.ExecuteAsync(itemSql, new
-                        {
-                            item.ISBN,
-                            OrderNum = orderId,
-                            item.Quantity,
-                            item.UnitPrice,
-                            Title = item.Title
-                        }, transaction);
-                    }
-                }
-
-                transaction.Commit();
-                return orderId;
-            }
-            catch
-            {
-                transaction.Rollback();
-                throw;
-            }
-        }
-
-
-        public async Task UpdateStatusAsync(int orderNumber, string username)
-        {
-            const string sql = """
-                UPDATE CustomerOrder
-                SET "Status" = @Status::order_status_enum
-                WHERE OrderID = @OrderID
-                  AND CustName = @CustName
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            await connection.ExecuteAsync(sql, new
-            {
-                OrderID = orderNumber,
-                CustName = username,
-                Status = OrderStatus.Canceled.ToString()
-            });
-        }
-
-        public async Task<IReadOnlyList<CustomerOrderItem>> GetOrderItemsAsync(int orderNumber)
-        {
-            const string sql = """
-                SELECT ISBN, OrderNum, Quantity, UnitPrice, Title
-                FROM customerorderItem
-                WHERE OrderNum = @OrderNum
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            var items = await connection.QueryAsync<CustomerOrderItem>(sql, new { OrderNum = orderNumber });
-            return items.ToList();
-        }
-
-        public async Task DeleteAsync(int orderNumber, string username)
-        {
-            const string sql = """
-                DELETE FROM CustomerOrder
-                WHERE OrderID = @OrderID
-                  AND CustName = @CustName
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            await connection.ExecuteAsync(sql, new
-            {
-                OrderID = orderNumber,
-                Custname = username
-            });
-        }
-
-
     }
+
+    public Task UpdateStatusAsync(int orderNumber, string username) =>
+        database.UpdateStatusAsync(orderNumber, username, OrderStatus.Canceled.ToString());
+
+    public async Task<IReadOnlyList<CustomerOrderItem>> GetOrderItemsAsync(int orderNumber) =>
+        (await database.GetItemsAsync(orderNumber)).ToList();
+
+    public Task DeleteAsync(int orderNumber, string username) => database.DeleteAsync(orderNumber, username);
 }

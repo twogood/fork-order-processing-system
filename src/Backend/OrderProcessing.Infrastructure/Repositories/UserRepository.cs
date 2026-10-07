@@ -1,269 +1,43 @@
-using Dapper;
 using OrderProcessing.Domain.Entities;
-using OrderProcessing.Domain.Interfaces;
 using OrderProcessing.Domain.Interfaces.Repositories;
 using OrderProcessing.Domain.ValueObjects;
+using OrderProcessing.Infrastructure.Data;
 
-namespace OrderProcessing.Infrastructure.Repositories
+namespace OrderProcessing.Infrastructure.Repositories;
+
+public class UserRepository(IUserDatabase database) : IUserRepository
 {
-    public class UserRepository : IUserRepository
+    public async Task<User?> GetByUserNameAsync(string username)
     {
-        private readonly IDbConnectionFactory _connectionFactory;
+        var row = await database.GetByUsernameAsync(username);
+        return row is null ? null : ToUser(row);
+    }
 
-        public UserRepository(IDbConnectionFactory connectionFactory)
-        {
-            _connectionFactory = connectionFactory;
-        }
+    public Task AddAsync(User user) => database.AddAsync(user.Username, user.PasswordHash, user.FirstName,
+        user.LastName, user.Email, user.PhoneNumber, user.Address, user.Role.ToString());
 
-        public async Task<User?> GetByUserNameAsync(string username)
-        {
-            const string sql = """
-                SELECT
-                    Username,
-                    "Password",
-                    FirstName,
-                    LastName,
-                    ShipAddress,
-                    Email,
-                    PhoneNumber,
-                    "Role"
-                FROM "User"
-                WHERE Username = @Username
-            """;
+    public Task UpdateAsync(User user) => database.UpdateAsync(user.Username, user.PasswordHash, user.FirstName,
+        user.LastName, user.Email, user.PhoneNumber, user.Address, user.Role.ToString());
 
-            using var connection = await _connectionFactory.CreateConnectionAsync();
+    public Task DeleteAsync(string username) => database.DeleteAsync(username);
 
-            var row = await connection.QuerySingleOrDefaultAsync<UserRow>(
-                sql,
-                new { Username = username }
-            );
+    public async Task<IReadOnlyList<User>> GetAllCustomersAsync() =>
+        (await database.GetAllCustomersAsync()).Select(ToUser).ToList();
 
-            if (row is null)
-                return null;
+    public async Task<IReadOnlyList<User>> SearchCustomersAsync(string? username, string? firstName,
+        string? lastName, string? email) =>
+        (await database.SearchCustomersAsync(Normalize(username), Normalize(firstName), Normalize(lastName),
+            Normalize(email))).Select(ToUser).ToList();
 
-            // Safely parse the role, default to Customer if null/empty/invalid
-            UserTypes role = UserTypes.Customer;
-            if (!string.IsNullOrWhiteSpace(row.Role))
-            {
-                Enum.TryParse<UserTypes>(row.Role, true, out role);
-            }
+    private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-            return new User(
-                row.Username,
-                row.Email,
-                row.PhoneNumber,
-                row.FirstName,
-                row.LastName,
-                row.Password,
-                role,
-                row.ShipAddress ?? string.Empty
-            );
-        }
+    private static User ToUser(UserRow row)
+    {
+        var role = UserTypes.Customer;
+        if (!string.IsNullOrWhiteSpace(row.Role))
+            Enum.TryParse(row.Role, true, out role);
 
-
-        public async Task AddAsync(User user)
-        {
-            const string sql = """
-                INSERT INTO "User" (
-                    Username,
-                    "Password",    
-                    FirstName,    
-                    LastName,        
-                    Email,
-                    PhoneNumber,     
-                    ShipAddress,
-                    "Role"
-                )
-                VALUES (
-                    @Username,
-                    @PasswordHash,
-                    @FirstName,
-                    @LastName,
-                    @Email,
-                    @PhoneNumber,
-                    @Address,
-                    @Role::role_enum
-                )
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            await connection.ExecuteAsync(sql, new
-            {
-                user.Username,
-                user.PasswordHash,
-                user.FirstName,
-                user.LastName,
-                user.Email,
-                user.PhoneNumber,
-                Role = user.Role.ToString(),
-                user.Address
-            });
-        }
-
-        public async Task UpdateAsync(User user)
-        {
-            const string sql = """
-                UPDATE "User"
-                SET
-                    Email = @Email,
-                    PhoneNumber = @PhoneNumber,
-                    FirstName = @FirstName,
-                    LastName = @LastName,
-                    ShipAddress = @Address,
-                    "Password" = @PasswordHash,
-                    "Role" = @Role::role_enum
-                WHERE username = @Username
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            await connection.ExecuteAsync(sql, new
-            {
-                user.Email,
-                user.PhoneNumber,
-                user.FirstName,
-                user.LastName,
-                user.Address,
-                user.PasswordHash,
-                Role = user.Role.ToString(),
-                user.Username
-            });
-        }
-
-        public async Task DeleteAsync(string username)
-        {
-            const string sql = """
-                DELETE FROM "User"
-                WHERE Username = @Username
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            await connection.ExecuteAsync(sql, new { Username = username });
-        }
-
-        public async Task<IReadOnlyList<User>> GetAllCustomersAsync()
-        {
-            const string sql = """
-                SELECT
-                    Username,
-                    "Password",
-                    FirstName,
-                    LastName,
-                    ShipAddress,
-                    Email,
-                    PhoneNumber,
-                    "Role"
-                FROM "User"
-                WHERE "Role" = 'Customer'
-                ORDER BY Username
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            var rows = await connection.QueryAsync<UserRow>(sql);
-
-            return rows.Select(row =>
-            {
-                UserTypes role = UserTypes.Customer;
-                if (!string.IsNullOrWhiteSpace(row.Role))
-                {
-                    Enum.TryParse<UserTypes>(row.Role, true, out role);
-                }
-
-                return new User(
-                    row.Username,
-                    row.Email,
-                    row.PhoneNumber,
-                    row.FirstName,
-                    row.LastName,
-                    row.Password,
-                    role,
-                    row.ShipAddress ?? string.Empty
-                );
-            }).ToList();
-        }
-
-        public async Task<IReadOnlyList<User>> SearchCustomersAsync(string? username, string? firstName, string? lastName, string? email)
-        {
-            var conditions = new List<string> { "\"Role\" = 'Customer'" };
-            var parameters = new Dictionary<string, object>();
-
-            if (!string.IsNullOrWhiteSpace(username))
-            {
-                conditions.Add("Username ILIKE @Username");
-                parameters["Username"] = $"%{username}%";
-            }
-
-            if (!string.IsNullOrWhiteSpace(firstName))
-            {
-                conditions.Add("FirstName ILIKE @FirstName");
-                parameters["FirstName"] = $"%{firstName}%";
-            }
-
-            if (!string.IsNullOrWhiteSpace(lastName))
-            {
-                conditions.Add("LastName ILIKE @LastName");
-                parameters["LastName"] = $"%{lastName}%";
-            }
-
-            if (!string.IsNullOrWhiteSpace(email))
-            {
-                conditions.Add("Email ILIKE @Email");
-                parameters["Email"] = $"%{email}%";
-            }
-
-            var sql = $"""
-                SELECT
-                    Username,
-                    "Password",
-                    FirstName,
-                    LastName,
-                    ShipAddress,
-                    Email,
-                    PhoneNumber,
-                    "Role"
-                FROM "User"
-                WHERE {string.Join(" AND ", conditions)}
-                ORDER BY Username
-            """;
-
-            using var connection = await _connectionFactory.CreateConnectionAsync();
-
-            var rows = await connection.QueryAsync<UserRow>(sql, parameters);
-
-            return rows.Select(row =>
-            {
-                UserTypes role = UserTypes.Customer;
-                if (!string.IsNullOrWhiteSpace(row.Role))
-                {
-                    Enum.TryParse<UserTypes>(row.Role, true, out role);
-                }
-
-                return new User(
-                    row.Username,
-                    row.Email,
-                    row.PhoneNumber,
-                    row.FirstName,
-                    row.LastName,
-                    row.Password,
-                    role,
-                    row.ShipAddress ?? string.Empty
-                );
-            }).ToList();
-        }
-
-        private record UserRow(
-            string Username,
-            string Password,
-            string FirstName,
-            string LastName,
-            string? ShipAddress,
-            string Email,
-            string PhoneNumber,
-            string? Role
-        );
-
+        return new User(row.Username, row.Email, row.PhoneNumber, row.FirstName, row.LastName,
+            row.Password, role, row.ShipAddress ?? string.Empty);
     }
 }

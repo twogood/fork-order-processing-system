@@ -3,7 +3,8 @@
     <ProjectReference Include="..\OrderProcessing.Domain\OrderProcessing.Domain.csproj"/>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Dapper" Version="2.1.66"/>
+    <PackageReference Include="Activout.DatabaseClient" Version="5.0.0-rc4"/>
+    <PackageReference Include="Activout.DatabaseClient.Dapper" Version="5.0.0-rc4"/>
     <PackageReference Include="Npgsql" Version="10.0.0"/>
   </ItemGroup>
   <PropertyGroup>
