@@ -1,142 +1,30 @@
-using Dapper;
-using OrderProcessing.Domain.Interfaces;
-using OrderProcessing.Domain.Models;
 using OrderProcessing.Domain.Interfaces.Repositories;
+using OrderProcessing.Domain.Models;
+using OrderProcessing.Infrastructure.Data;
 
 namespace OrderProcessing.Infrastructure.Repositories;
 
-public class ReportRepository : IReportRepository
+public class ReportRepository(IReportDatabase database) : IReportRepository
 {
-    private readonly IDbConnectionFactory _connectionFactory;
-    
-    public ReportRepository(IDbConnectionFactory connectionFactory)
-    {
-        _connectionFactory = connectionFactory;
-    }
-
     public async Task<SalesReportReadModel> GetTotalSalesPreviousMonthAsync()
     {
-        using var connection = await _connectionFactory.CreateConnectionAsync();
-
-        // Previous month: from the first day of last month to the last day of last month
-                var salesSql = 
-                """
-                        SELECT OrderID, OrderDate, TotalPrice
-                        FROM customerorder 
-                        WHERE "Status" = 'Confirmed'::order_status_enum 
-                            AND OrderDate >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-                            AND OrderDate < DATE_TRUNC('month', CURRENT_DATE)
-                """;
-
-                // this select returns the total revenue from all the sales
-                var totalPriceSql =
-                """
-                        SELECT SUM(TotalPrice) AS totalPrice
-                        FROM customerorder
-                        WHERE "Status" = 'Confirmed'::order_status_enum 
-                            AND OrderDate >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-                            AND OrderDate < DATE_TRUNC('month', CURRENT_DATE)
-                """;
-
-        var sales = await connection.QueryAsync(salesSql);
-        var totalPrice = await connection.QuerySingleAsync<decimal?>(totalPriceSql) ?? 0;
-
-        return new SalesReportReadModel
-        (
-            Period: "Previous Month",
-            TotalSalesAmount: totalPrice,
-            TotalTransactionCount: sales.Count()
-        );
+        var sales = await database.GetPreviousMonthSalesAsync();
+        return new SalesReportReadModel("Previous Month", await database.GetPreviousMonthTotalAsync(), sales.Count());
     }
 
     public async Task<SalesReportReadModel> GetTotalSalesByDateAsync(DateOnly date)
     {
-        using var connection = await _connectionFactory.CreateConnectionAsync();
-
-        // admin that inserts the date inserts it here
-                var salesSql = 
-                """
-                        SELECT OrderID, OrderDate, TotalPrice
-                        FROM customerorder
-                        WHERE "Status" = 'Confirmed'::order_status_enum
-                            AND OrderDate = @Date
-                """;
-
-                // this select returns the total revenue from all the sales on that day
-                var totalPriceSql =
-                """
-                        SELECT SUM(TotalPrice) AS totalPrice
-                        FROM customerorder
-                        WHERE "Status" = 'Confirmed'::order_status_enum
-                            AND OrderDate = @Date
-                """;
-
-        var sales = await connection.QueryAsync(salesSql, new { Date = date.ToDateTime(TimeOnly.MinValue) });
-        var totalPrice = await connection.QuerySingleAsync<decimal?>(totalPriceSql, new { Date = date.ToDateTime(TimeOnly.MinValue) }) ?? 0;
-
-        return new SalesReportReadModel
-        (
-            Period: date.ToString("yyyy-MM-dd"),
-            TotalSalesAmount: totalPrice,
-            TotalTransactionCount: sales.Count()
-        );
+        var value = date.ToDateTime(TimeOnly.MinValue);
+        var sales = await database.GetSalesByDateAsync(value);
+        return new SalesReportReadModel(date.ToString("yyyy-MM-dd"), await database.GetTotalByDateAsync(value),
+            sales.Count());
     }
 
-    public async Task<IEnumerable<TopCustomerReadModel>> GetTop5CustomersAsync()
-    {
-        using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql =
-        """
-                SELECT
-                    co.CustName AS CustomerName,
-                    SUM(co.TotalPrice) AS TotalSpent,
-                    u.Email AS Email
-                FROM customerorder co
-                JOIN "User" u ON co.CustName = u.Username
-                WHERE co."Status" = 'Confirmed'::order_status_enum
-                    AND co.OrderDate >= CURRENT_DATE - INTERVAL '3 months'
-                    AND co.OrderDate <= CURRENT_DATE
-                GROUP BY co.CustName, u.Email
-                ORDER BY TotalSpent DESC
-                LIMIT 5
-        """;
-        return await connection.QueryAsync<TopCustomerReadModel>(sql);
-    }
+    public Task<IEnumerable<TopCustomerReadModel>> GetTop5CustomersAsync() => database.GetTop5CustomersAsync();
 
-    public async Task<IEnumerable<TopSellingBookReadModel>> GetTop10SellingBooksAsync()
-    {
-        using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql =
-        """
-            SELECT b.ISBN, b.Title, SUM(oi.Quantity) AS TotalCopiesSold
-            FROM customerorderItem AS oi
-            JOIN Book AS b ON b.ISBN = oi.ISBN
-            JOIN CustomerOrder AS o ON o.OrderID = oi.OrderNum
-            WHERE o."Status" = 'Confirmed'::order_status_enum 
-                AND o.OrderDate >= CURRENT_DATE - INTERVAL '3 months' 
-                AND o.OrderDate <= CURRENT_DATE
-            GROUP BY b.ISBN, b.Title
-            ORDER BY TotalCopiesSold DESC
-            LIMIT 10
-        """;
-        return await connection.QueryAsync<TopSellingBookReadModel>(sql);
-    }
+    public Task<IEnumerable<TopSellingBookReadModel>> GetTop10SellingBooksAsync() =>
+        database.GetTop10SellingBooksAsync();
 
-    public async Task<BookReplenishmentCountReadModel?> GetBookReplenishmentCountAsync(string isbn)
-    {
-        using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql =
-        """
-            SELECT 
-                b.ISBN,
-                b.Title,
-                COUNT(DISTINCT aoi.OrderNum) AS TimesOrderedFromPublisher,
-                COALESCE(SUM(aoi.Quantity), 0) AS TotalQuantityOrdered
-            FROM book b
-            LEFT JOIN AdminOrderItem aoi ON b.ISBN = aoi.ISBN
-            WHERE b.ISBN = @Isbn
-            GROUP BY b.ISBN, b.Title
-        """;
-        return await connection.QuerySingleOrDefaultAsync<BookReplenishmentCountReadModel>(sql, new { Isbn = isbn });
-    }
+    public Task<BookReplenishmentCountReadModel?> GetBookReplenishmentCountAsync(string isbn) =>
+        database.GetBookReplenishmentCountAsync(isbn);
 }

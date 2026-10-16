@@ -1,9 +1,10 @@
+using System.Data;
+using Activout.DatabaseClient.Dapper.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
-using OrderProcessing.Domain.Interfaces;
 using OrderProcessing.Domain.Interfaces.Repositories;
 using OrderProcessing.Infrastructure.Data;
 using OrderProcessing.Infrastructure.Repositories;
-using Dapper;
+using Npgsql;
 
 namespace OrderProcessing.Infrastructure;
 
@@ -13,8 +14,16 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         string connectionString)
     {
-        // Register the Postgres connection factory
-        services.AddSingleton<IDbConnectionFactory>(_ => new PostgresConnectionFactory(connectionString));
+        services.AddScoped<IDbConnection>(_ => new NpgsqlConnection(connectionString));
+
+        services.AddDapperDatabaseClient<IUserDatabase>();
+        services.AddDapperDatabaseClient<IPublisherDatabase>();
+        services.AddDapperDatabaseClient<IReportDatabase>();
+        services.AddDapperDatabaseClient<IShoppingCartDatabase>();
+        services.AddDapperDatabaseClient<ICreditCardDatabase>();
+        services.AddDapperDatabaseClient<ICustomerOrderDatabase>();
+        services.AddDapperDatabaseClient<IAdminOrderDatabase>();
+        services.AddDapperDatabaseClient<IBookDatabase>();
 
         // Register repositories
         services.AddScoped<IBookRepository, BookRepository>();

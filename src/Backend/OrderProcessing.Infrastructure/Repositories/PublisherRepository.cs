@@ -1,30 +1,12 @@
 using OrderProcessing.Domain.Entities;
-using OrderProcessing.Domain.Interfaces;
 using OrderProcessing.Domain.Interfaces.Repositories;
-using Dapper;
+using OrderProcessing.Infrastructure.Data;
 
 namespace OrderProcessing.Infrastructure.Repositories;
 
-public class PublisherRepository : IPublisherRepository
+public class PublisherRepository(IPublisherDatabase database) : IPublisherRepository
 {
-    private readonly IDbConnectionFactory _connectionFactory;
+    public Task<IEnumerable<Publisher>> GetAllAsync() => database.GetAllAsync();
 
-    public PublisherRepository(IDbConnectionFactory connectionFactory)
-    {
-        _connectionFactory = connectionFactory;
-    }
-
-    public async Task<IEnumerable<Publisher>> GetAllAsync()
-    {
-        const string sql = "SELECT * FROM publisher ORDER BY pubname";
-        using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QueryAsync<Publisher>(sql);
-    }
-
-    public async Task<Publisher?> GetByIdAsync(int id)
-    {
-        const string sql = "SELECT * FROM publisher WHERE pubid = @Id";
-        using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QueryFirstOrDefaultAsync<Publisher>(sql, new { Id = id });
-    }
+    public Task<Publisher?> GetByIdAsync(int id) => database.GetByIdAsync(id);
 }
