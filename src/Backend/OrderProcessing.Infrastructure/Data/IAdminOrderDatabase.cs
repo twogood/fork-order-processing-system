@@ -11,7 +11,7 @@ public interface IAdminOrderDatabase : IWithTransactions
         SELECT OrderId, OrderDate, "Status", TotalPrice, PubID, ConfirmedBy
         FROM adminorder ORDER BY OrderDate DESC, OrderId DESC
         """)]
-    Task<IEnumerable<AdminOrder>> GetAllAsync();
+    Task<IReadOnlyList<AdminOrder>> GetAllAsync();
 
     [SqlQuery("""
         SELECT OrderId, OrderDate, "Status", TotalPrice, PubID, ConfirmedBy
@@ -48,5 +48,5 @@ public interface IAdminOrderDatabase : IWithTransactions
     Task<int> GetOrderCountForBookAsync(int isbn);
 
     [SqlQuery("SELECT ISBN, Quantity, UnitPrice FROM adminorderitem WHERE OrderNum = @orderId")]
-    Task<IEnumerable<AdminOrderItem>> GetItemsAsync(int orderId);
+    Task<List<AdminOrderItem>> GetItemsAsync(int orderId);
 }

@@ -1,7 +1,5 @@
 using System.Data;
-using Activout.DatabaseClient;
-using Activout.DatabaseClient.Dapper;
-using Activout.DatabaseClient.Implementation;
+using Activout.DatabaseClient.Dapper.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using OrderProcessing.Domain.Interfaces.Repositories;
 using OrderProcessing.Infrastructure.Data;
@@ -17,16 +15,15 @@ public static class ServiceCollectionExtensions
         string connectionString)
     {
         services.AddScoped<IDbConnection>(_ => new NpgsqlConnection(connectionString));
-        services.AddTransient<DatabaseClientBuilder>();
 
-        services.AddScoped<IUserDatabase>(CreateDatabaseClient<IUserDatabase>);
-        services.AddScoped<IPublisherDatabase>(CreateDatabaseClient<IPublisherDatabase>);
-        services.AddScoped<IReportDatabase>(CreateDatabaseClient<IReportDatabase>);
-        services.AddScoped<IShoppingCartDatabase>(CreateDatabaseClient<IShoppingCartDatabase>);
-        services.AddScoped<ICreditCardDatabase>(CreateDatabaseClient<ICreditCardDatabase>);
-        services.AddScoped<ICustomerOrderDatabase>(CreateDatabaseClient<ICustomerOrderDatabase>);
-        services.AddScoped<IAdminOrderDatabase>(CreateDatabaseClient<IAdminOrderDatabase>);
-        services.AddScoped<IBookDatabase>(CreateDatabaseClient<IBookDatabase>);
+        services.AddDapperDatabaseClient<IUserDatabase>();
+        services.AddDapperDatabaseClient<IPublisherDatabase>();
+        services.AddDapperDatabaseClient<IReportDatabase>();
+        services.AddDapperDatabaseClient<IShoppingCartDatabase>();
+        services.AddDapperDatabaseClient<ICreditCardDatabase>();
+        services.AddDapperDatabaseClient<ICustomerOrderDatabase>();
+        services.AddDapperDatabaseClient<IAdminOrderDatabase>();
+        services.AddDapperDatabaseClient<IBookDatabase>();
 
         // Register repositories
         services.AddScoped<IBookRepository, BookRepository>();
@@ -41,10 +38,4 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
-
-    private static T CreateDatabaseClient<T>(IServiceProvider serviceProvider)
-        where T : class =>
-        serviceProvider.GetRequiredService<DatabaseClientBuilder>()
-            .With(new DapperGateway(serviceProvider.GetRequiredService<IDbConnection>()))
-            .Build<T>();
 }

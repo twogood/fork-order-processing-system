@@ -11,7 +11,7 @@ public interface ICustomerOrderDatabase : IWithTransactions
         SELECT OrderID AS OrderNumber, OrderDate, "Status", TotalPrice, Custname AS Username, ShippingAddress
         FROM customerorder WHERE CustName = @username ORDER BY OrderDate DESC, OrderID DESC
         """)]
-    Task<IEnumerable<CustomerOrder>> GetByUsernameAsync(string username);
+    Task<IReadOnlyList<CustomerOrder>> GetByUsernameAsync(string username);
 
     [SqlQuery("""
         SELECT OrderID AS OrderNumber, TotalPrice, "Status", OrderDate, CustName AS Username, ShippingAddress
@@ -42,7 +42,7 @@ public interface ICustomerOrderDatabase : IWithTransactions
     [SqlQuery("""
         SELECT ISBN, OrderNum, Quantity, UnitPrice, Title FROM customerorderItem WHERE OrderNum = @orderNum
         """)]
-    Task<IEnumerable<CustomerOrderItem>> GetItemsAsync(int orderNum);
+    Task<IReadOnlyList<CustomerOrderItem>> GetItemsAsync(int orderNum);
 
     [SqlUpdate("DELETE FROM CustomerOrder WHERE OrderID = @orderId AND CustName = @custName")]
     Task DeleteAsync(int orderId, string custName);

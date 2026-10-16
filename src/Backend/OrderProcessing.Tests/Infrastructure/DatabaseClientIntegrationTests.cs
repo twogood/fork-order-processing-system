@@ -2,7 +2,10 @@ using Activout.DatabaseClient;
 using Activout.DatabaseClient.Attributes;
 using Activout.DatabaseClient.Dapper;
 using Activout.DatabaseClient.Implementation;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using OrderProcessing.Infrastructure;
+using OrderProcessing.Infrastructure.Data;
 using Xunit;
 
 namespace OrderProcessing.Tests.Infrastructure;
@@ -13,11 +16,7 @@ public class DatabaseClientIntegrationTests
     [Trait("Category", "Integration")]
     public async Task DatabaseClient_ExecutesQueriesAndTransactionOnPostgres()
     {
-        var connectionString = Environment.GetEnvironmentVariable("ORDER_PROCESSING_TEST_CONNECTION_STRING");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            Skip.If(true, "Set ORDER_PROCESSING_TEST_CONNECTION_STRING to run PostgreSQL integration tests.");
-        }
+        var connectionString = GetConnectionString();
 
         await using var connection = new NpgsqlConnection(connectionString);
         var database = new DatabaseClientBuilder()
@@ -30,6 +29,30 @@ public class DatabaseClientIntegrationTests
         transaction.Commit();
 
         Assert.Equal(42, await database.GetValueAsync());
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task InfrastructureRegistration_ResolvesCollectionDao()
+    {
+        var services = new ServiceCollection();
+        services.AddInfrastructure(GetConnectionString());
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<IAdminOrderDatabase>();
+
+        var orders = await database.GetAllAsync();
+
+        Assert.IsAssignableFrom<IReadOnlyList<OrderProcessing.Domain.Entities.AdminOrder>>(orders);
+    }
+
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("ORDER_PROCESSING_TEST_CONNECTION_STRING");
+        Skip.If(string.IsNullOrWhiteSpace(connectionString),
+            "Set ORDER_PROCESSING_TEST_CONNECTION_STRING to run PostgreSQL integration tests.");
+        return connectionString!;
     }
 
     private interface IProbeDatabase : IWithTransactions

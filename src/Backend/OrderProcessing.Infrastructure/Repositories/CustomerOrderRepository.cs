@@ -7,8 +7,8 @@ namespace OrderProcessing.Infrastructure.Repositories;
 
 public class CustomerOrderRepository(ICustomerOrderDatabase database) : ICustomerOrderRepository
 {
-    public async Task<IReadOnlyList<CustomerOrder>> GetByUsernameAsync(string username) =>
-        (await database.GetByUsernameAsync(username)).ToList();
+    public Task<IReadOnlyList<CustomerOrder>> GetByUsernameAsync(string username) =>
+        database.GetByUsernameAsync(username);
 
     public Task<CustomerOrder?> GetByOrderNumberAsync(int orderNumber, string username) =>
         database.GetByOrderNumberAsync(orderNumber, username);
@@ -35,8 +35,8 @@ public class CustomerOrderRepository(ICustomerOrderDatabase database) : ICustome
     public Task UpdateStatusAsync(int orderNumber, string username) =>
         database.UpdateStatusAsync(orderNumber, username, OrderStatus.Canceled.ToString());
 
-    public async Task<IReadOnlyList<CustomerOrderItem>> GetOrderItemsAsync(int orderNumber) =>
-        (await database.GetItemsAsync(orderNumber)).ToList();
+    public Task<IReadOnlyList<CustomerOrderItem>> GetOrderItemsAsync(int orderNumber) =>
+        database.GetItemsAsync(orderNumber);
 
     public Task DeleteAsync(int orderNumber, string username) => database.DeleteAsync(orderNumber, username);
 }

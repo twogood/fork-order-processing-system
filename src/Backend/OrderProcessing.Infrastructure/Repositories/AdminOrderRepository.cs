@@ -6,7 +6,7 @@ namespace OrderProcessing.Infrastructure.Repositories;
 
 public class AdminOrderRepository(IAdminOrderDatabase database) : IAdminOrderRepository
 {
-    public async Task<IReadOnlyList<AdminOrder>> GetAllAsync() => (await database.GetAllAsync()).ToList();
+    public Task<IReadOnlyList<AdminOrder>> GetAllAsync() => database.GetAllAsync();
 
     public Task<AdminOrder?> GetByOrderIdAsync(int orderId) => database.GetByOrderIdAsync(orderId);
 
@@ -38,6 +38,5 @@ public class AdminOrderRepository(IAdminOrderDatabase database) : IAdminOrderRep
 
     public Task<int> GetOrderCountForBookAsync(int isbn) => database.GetOrderCountForBookAsync(isbn);
 
-    public async Task<List<AdminOrderItem>> GetOrderItemsAsync(int orderId) =>
-        (await database.GetItemsAsync(orderId)).ToList();
+    public Task<List<AdminOrderItem>> GetOrderItemsAsync(int orderId) => database.GetItemsAsync(orderId);
 }
